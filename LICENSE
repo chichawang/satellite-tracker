@@ -1,0 +1,43 @@
+MIT License with Commercial Use Notification
+（MIT 授權附加商業使用告知條款）
+
+Copyright (c) 2026 王志嘉
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+1. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+2. Commercial use notification. Anyone who uses the Software, or any work
+   derived from it, for commercial purposes must notify the copyright holder
+   before such use begins, stating who is using it and for what purpose.
+   Notification may be given by opening an issue in the project's public
+   source repository or through any contact method listed in the project's
+   README. "Commercial purposes" means use intended for or directed toward
+   commercial advantage or monetary compensation, including use within a paid
+   product or service.
+
+   商業使用告知：任何人將本軟體或其衍生作品用於商業用途，必須在開始使用前
+   告知著作權人，並說明使用者與用途。告知方式為在本專案的公開原始碼儲存庫
+   開立 issue，或透過專案 README 所列的聯絡方式。「商業用途」指以取得商業
+   利益或金錢報酬為目的之使用，包括用於收費的產品或服務。
+
+   If the English and Chinese texts of this clause differ, the Chinese text
+   prevails. 本條款中英文如有出入，以中文為準。
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+This license applies only to the project's own code (index.html,
+update-data.py, update-data.ps1). Third-party libraries and data under lib/
+and data/ remain under their own licenses; see README.

@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全球衛星即時位置（離線版）</title>
+<style>
+  :root { --bg:#05080f; --panel:rgba(14,20,32,.92); --line:#243046; --txt:#dbe4f0; --dim:#8695ab; --acc:#5ab0ff; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt); overflow:hidden;
+    font:13px/1.5 "Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif; }
+  #view { position:absolute; inset:0; }
+  canvas { display:block; }
+  .panel { position:absolute; background:var(--panel); border:1px solid var(--line); border-radius:8px; backdrop-filter:blur(6px); }
+  #left { top:10px; right:10px; bottom:10px; width:290px; display:flex; flex-direction:column; }
+  #left h1 { font-size:15px; margin:0; padding:10px 12px 2px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  #collapse { background:#0b111c; color:var(--txt); border:1px solid var(--line); border-radius:4px; padding:1px 8px; cursor:pointer; font:inherit; font-size:12px; white-space:nowrap; }
+  #collapse:hover, #refresh:hover { border-color:var(--acc); }
+  #refresh { background:#0b111c; color:var(--txt); border:1px solid var(--line); border-radius:4px; padding:0 6px; cursor:pointer; font:inherit; font-size:11px; white-space:nowrap; }
+  #left.collapsed { bottom:auto; width:auto; height:auto; }
+  #left.collapsed > :not(h1) { display:none; }
+  #left.collapsed h1 { padding:6px; }
+  #left.collapsed h1 span { display:none; }
+  #left .sub { color:var(--dim); font-size:11px; padding:0 12px 8px; border-bottom:1px solid var(--line); }
+  .sec { border-bottom:1px solid var(--line); }
+  .sechead { padding:5px 12px; cursor:pointer; font-weight:600; color:var(--acc); background:rgba(90,176,255,.07); user-select:none; }
+  .sechead::before { content:'▾ '; }
+  .sec.closed .sechead::before { content:'▸ '; }
+  .sechead:hover { background:rgba(90,176,255,.16); }
+  .sec.closed .secbody { display:none; }
+  .sec.grow { flex:1; min-height:0; display:flex; flex-direction:column; border-bottom:none; }
+  .sec.grow.closed { flex:none; }
+  .sec.grow .secbody { flex:1; min-height:0; display:flex; flex-direction:column; }
+  #scheme { padding:6px 12px 0; display:flex; gap:4px; align-items:center; }
+  #scheme button { background:#0b111c; color:var(--txt); border:1px solid var(--line); border-radius:4px; padding:1px 8px; cursor:pointer; font:inherit; font-size:12px; }
+  #scheme button:hover { border-color:var(--acc); }
+  #scheme button.on { background:var(--acc); color:#04101f; border-color:var(--acc); }
+  #catall { margin-left:auto; display:flex; gap:4px; }
+  #catall button { color:var(--dim); padding:1px 5px; font-size:11px; }
+  #schemenote { display:none; padding:3px 12px 0; color:var(--dim); font-size:11px; }
+  #cats { padding:6px 12px 8px; }
+  #cats label { display:flex; align-items:center; gap:6px; cursor:pointer; padding:1px 0; }
+  #cats .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  #cats .n { margin-left:auto; color:var(--dim); font-variant-numeric:tabular-nums; }
+  #search { margin:8px 12px; padding:6px 8px; background:#0b111c; color:var(--txt); border:1px solid var(--line); border-radius:5px; outline:none; }
+  #search:focus { border-color:var(--acc); }
+  #listinfo { padding:0 12px 4px; color:var(--dim); font-size:11px; }
+  #list { flex:1; overflow-y:auto; position:relative; border-top:1px solid var(--line); }
+  #listinner { position:relative; }
+  .row { position:absolute; left:0; right:0; height:22px; padding:0 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    cursor:pointer; display:flex; align-items:center; gap:6px; }
+  .row:hover { background:#16223a; }
+  .row.sel { background:#1d3558; }
+  .row .dot { width:7px; height:7px; border-radius:50%; flex:none; }
+  .row .id { margin-left:auto; color:var(--dim); font-size:11px; }
+  #time { top:10px; left:50%; transform:translateX(-50%); padding:6px 12px; display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  #time button { background:#0b111c; color:var(--txt); border:1px solid var(--line); border-radius:4px; padding:2px 8px; cursor:pointer; font:inherit; }
+  #time button:hover { border-color:var(--acc); }
+  #time button.on { background:var(--acc); color:#04101f; border-color:var(--acc); }
+  #clock { font-variant-numeric:tabular-nums; min-width:215px; }
+  #info { top:10px; left:10px; width:310px; max-height:calc(100% - 20px); overflow-y:auto; padding:12px; display:none; }
+  #info h2 { margin:0 20px 2px 0; font-size:16px; word-break:break-word; }
+  #info .tag { display:inline-block; padding:0 8px; border-radius:10px; font-size:11px; color:#04101f; font-weight:600; margin-bottom:8px; }
+  #info table { width:100%; border-collapse:collapse; }
+  #info td { padding:2px 0; vertical-align:top; }
+  #info td:first-child { color:var(--dim); width:42%; }
+  #info td:last-child { font-variant-numeric:tabular-nums; }
+  #info h3 { font-size:12px; color:var(--acc); margin:10px 0 3px; border-bottom:1px solid var(--line); padding-bottom:2px; }
+  #info a { color:var(--acc); text-decoration:none; display:inline-block; margin:2px 10px 2px 0; }
+  #info a:hover { text-decoration:underline; }
+  #info pre { font:10px Consolas,monospace; color:var(--dim); margin:4px 0 0; white-space:pre; overflow-x:auto; }
+  #close { position:absolute; top:6px; right:8px; background:none; border:none; color:var(--dim); font-size:18px; cursor:pointer; }
+  #tip { position:absolute; pointer-events:none; background:#000c; border:1px solid var(--line); border-radius:4px; padding:1px 7px; display:none; white-space:nowrap; }
+  #hint { bottom:10px; left:50%; transform:translateX(-50%); padding:4px 12px; color:var(--dim); font-size:11px; white-space:nowrap; }
+  #sky { padding:6px 12px; display:grid; grid-template-columns:1fr 1fr; gap:0 8px; }
+  #sky label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  #labels { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+  .lbl { position:absolute; transform:translate(9px,-50%); font-size:11px; color:#b9c6da; text-shadow:0 0 3px #000,0 0 3px #000; white-space:nowrap; display:none; }
+  .lbl.big { font-size:12px; color:#fff; font-weight:600; }
+  @media (max-width:900px) {
+    #left { width:230px; bottom:auto; height:46%; }
+    #time { left:10px; right:250px; transform:none; flex-wrap:wrap; white-space:normal; }
+    #clock { min-width:0; width:100%; }
+    #info { top:80px; left:10px; width:250px; max-height:calc(100% - 90px); }
+    #hint { display:none; }
+  }
+  #err {top:50%; left:50%; transform:translate(-50%,-50%); padding:20px; display:none; max-width:480px; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="labels"></div>
+
+<div id="left" class="panel">
+  <h1><span>🛰 全球衛星即時位置</span><button id="collapse" title="收合／展開選單">收合 »</button></h1>
+  <div class="sub"><span id="datainfo">載入中…</span> <button id="refresh" title="立即從 CelesTrak 下載最新軌道資料（需連網）">⟳ 線上更新</button></div>
+  <div class="sec">
+    <div class="sechead">衛星分類</div>
+    <div class="secbody">
+      <div id="scheme"><button data-k="cat" class="on">依軌道</button><button data-k="pcat">依用途</button>
+        <span id="catall"><button data-on="1">全選</button><button data-on="0">全不選</button></span></div>
+      <div id="schemenote">以 CelesTrak 官方群組為主，未收錄者依名稱推定</div>
+      <div id="cats"></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sechead">顯示圖層</div>
+    <div class="secbody">
+  <div id="sky">
+    <label><input type="checkbox" checked id="sk_sunmoon">☀ 太陽／🌙 月球</label>
+    <label><input type="checkbox" checked id="sk_stars">✦ 星空</label>
+    <label><input type="checkbox" checked id="sk_ecl">◯ 黃道面</label>
+    <label><input type="checkbox" checked id="sk_light">◐ 日夜光照</label>
+    <label><input type="checkbox" checked id="sk_border">▱ 國界</label>
+    <label><input type="checkbox" checked id="sk_grid">⌗ 經緯線</label>
+    <label><input type="checkbox" checked id="sk_track">〰 日月地面軌跡</label>
+    <label style="grid-column:1 / -1" title="把每顆衛星畫在它正下方的地表位置（星下點）"><input type="checkbox" id="sk_proj">⤓ 所有衛星投影到地表</label>
+  </div>
+    </div>
+  </div>
+  <div class="sec grow">
+    <div class="sechead">衛星清單</div>
+    <div class="secbody">
+      <input id="search" placeholder="搜尋名稱或 NORAD 編號…" autocomplete="off">
+      <div id="listinfo"></div>
+      <div id="list"><div id="listinner"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="time" class="panel">
+  <span id="clock"></span>
+  <button data-s="0">⏸</button>
+  <button data-s="1" class="on">1×</button>
+  <button data-s="10">10×</button>
+  <button data-s="60">60×</button>
+  <button data-s="600">600×</button>
+  <button id="now">現在</button>
+</div>
+
+<div id="info" class="panel"><button id="close" title="關閉">×</button><div id="infobody"></div></div>
+<div id="tip"></div>
+<div id="hint" class="panel">拖曳旋轉 · 滾輪縮放 · 點選衛星查看詳細資訊　｜　軌道資料 CelesTrak · 星空／太陽／月球／夜間貼圖 Solar System Scope (CC BY 4.0) · 國界 Natural Earth</div>
+<div id="err" class="panel"></div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/satellite.min.js"></script>
+<script src="data/earth.js"></script>
+<script src="data/tle.js"></script>
+<script src="data/groups.js"></script>
+<script src="data/sky.js"></script>
+<script src="data/world.js"></script>
+<script>
+function main() {
+'use strict';
+if (!window.THREE || !window.satellite || !window.TLE_DATA) {
+  var e = document.getElementById('err'); e.style.display = 'block';
+  e.textContent = '缺少必要檔案：請確認 lib/three.min.js、lib/satellite.min.js、data/tle.js、data/earth.js 與 index.html 放在同一個資料夾內。';
+  return;
+}
+var RE = 6371, MU = 398600.4418, D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+// ---------- 分類 ----------
+var CATS = [
+  { key:'station',  name:'太空站',               color:'#ff4fd8', desc:'國際太空站 ISS、中國天宮太空站 CSS 及對接中的飛船' },
+  { key:'starlink', name:'低軌 LEO — Starlink',  color:'#6f7f96', desc:'低地球軌道（Starlink 星系）' },
+  { key:'leo',      name:'低軌 LEO — 其他',      color:'#4fc3ff', desc:'低地球軌道（高度 < 2,000 km）' },
+  { key:'meo',      name:'中軌 MEO',             color:'#58e08a', desc:'中地球軌道（2,000 – 35,786 km）' },
+  { key:'gps',      name:'GPS 導航衛星',         color:'#ffd84a', desc:'美國 GPS (NAVSTAR) 全球定位系統' },
+  { key:'gnss',     name:'其他導航 (GNSS)',      color:'#ff9f43', desc:'Galileo／北斗／GLONASS／QZSS／NavIC' },
+  { key:'geo',      name:'地球同步 GEO',         color:'#ff5c6c', desc:'地球同步／靜止軌道（約 35,786 km）' },
+  { key:'heo',      name:'高橢圓 HEO／其他',     color:'#c58bff', desc:'高橢圓軌道或同步軌道以上' }
+];
+var CAT_IX = {}; CATS.forEach(function (c, i) { CAT_IX[c.key] = i; c.count = 0; c.on = true; c.rgb = new THREE.Color(c.color); });
+
+// 第二種分類方式：依用途。以 CelesTrak 官方群組（data/groups.js）為主；未收錄的衛星用下面的名稱規則 (re) 推定。
+var PCATS = [
+  { key:'station',   name:'太空站',              color:'#ff4fd8', desc:'國際太空站 ISS、中國天宮太空站 CSS 及對接中的飛船',
+    re:/^ISS \(|^CSS \(|^TIANGONG|^PROGRESS-MS|^SOYUZ-MS|^TIANZHOU|^SHENZHOU|DRAGON|^CYGNUS|^HTV/ },
+  { key:'gps',       name:'GPS 導航衛星',        color:'#ffd84a', desc:'美國 GPS (NAVSTAR) 全球定位系統', re:/NAVSTAR|^GPS / },
+  { key:'gnss',      name:'其他導航 (GNSS)',     color:'#ff9f43', desc:'Galileo／北斗／GLONASS／QZSS／NavIC', re:/GALILEO|BEIDOU|GLONASS|^QZS|IRNSS|^NVS-/ },
+  { key:'weather',   name:'氣象衛星',            color:'#4fe3ff', desc:'氣象、海洋與大氣觀測（NOAA、GOES、向日葵、風雲、Meteosat、MetOp、福衛七號等）',
+    re:/^NOAA \d|^GOES|^METEOSAT|^MSG|^MTG|^HIMAWARI|^FENGYUN|^FY-|^METOP|^METEOR-M|^DMSP|^GEO-KOMPSAT|^INSAT-3D|^ELEKTRO|^ARKTIKA|^SUOMI|^JPSS|^GPM|^TROPICS|^COSMIC|^FORMOSAT-7|^TRITON|^YUNHAI|^TIANMU|^HAIYANG|^HY-|^JASON|^SENTINEL-6|^SENTINEL-3|^WSF|^GCOM-W|^SMOS|^CYGFM|^CYGNSS|^TOMORROW/ },
+  { key:'military',  name:'軍用／情報衛星',      color:'#ff5c6c', desc:'依名稱推定：USA、NROL、COSMOS、遙感 (Yaogan)、SBIRS、WGS、AEHF、MUOS 等軍事通訊、偵察與預警衛星',
+    re:/^USA \d|^NROL|^COSMOS \d|^YAOGAN|^SBIRS|^WGS|^AEHF|^MUOS|^DSP |^MILSTAR|^DSCS|^UFO |^SKYNET|^SICRAL|^SYRACUSE|^OFEQ|^SAR-LUPE|^SARAH|^HELIOS \d|^CSO-|^IGS |^TJS|^KONDOR|^LOTOS|^BARS-M|^PION|^NOSS|^GSSAP|^COMSATBW|^XTAR|^ANASIS|^SPAINSAT|^MALLIGYONG|^TOPAZ|^PERSONA|^RAZDAN|^NEITRON|^LUCH|^BLAGOVEST|^RODNIK|^STRELA|^PARUS|^GEO-IK|^SDA|^TRANCHE|^STARSHIELD|^WFOV|^NTS-|^LDPE|^TACSAT|^ORS-|^STSS|^ELISA|^FENGHUO|^SHENTONG|^RADUGA|^CERES \d|^GOKTURK|^KMS|^NOOR|^PRAETORIAN/ },
+  { key:'broadband', name:'網路通訊星系',        color:'#6f7f96', desc:'低軌寬頻網路巨型星系：Starlink、OneWeb、Kuiper、千帆、國網等',
+    re:/^STARLINK|^ONEWEB|^KUIPER|^QIANFAN|^HULIANWANG|^GUOWANG|^LYNK|^BLUEBIRD|^BLUEWALKER|^SPACEMOBILE|^RASSVET/ },
+  { key:'science',   name:'科學／技術試驗',      color:'#c58bff', desc:'天文、太空物理、測地與技術試驗衛星（哈伯、費米、實踐、試驗系列等）',
+    re:/^HST|^HUBBLE|^CXO|^XMM|^SWIFT|^FERMI|^NUSTAR|^TESS|^IXPE|^CSES|^DAMPE|^HXMT|^EINSTEIN|^GRACE|^ICESAT|^CRYOSAT|^SMAP|^AURA|^CALIPSO|^CLOUDSAT|^LAGEOS|^MMS|^THEMIS|^CLUSTER|^ICON|^IRIS|^HINODE|^AIM|^TIMED|^ASTROSAT|^SHIYAN|^SHIJIAN|^SJ-|^XJS|^CHEOPS|^INTEGRAL|^SPEKTR|^GECAM|^SVOM|^XRISM|^ASO-S|^KUAFU|^TANSAT|^TANSUO|^LARES|^STARLETTE|^STELLA|^AJISAI|^ETALON|^BLITS|^PROBA|^SORCE|^SDO|^GOLD|^PUNCH|^SPHEREX|^OCO|^SWOT|^NISAR|^PACE|^ZHANGHENG|^MOZI|^QUESS|^TAIJI|^TIANQIN|^LIXING/ },
+  { key:'earthobs',  name:'地球觀測／遙測',      color:'#58e08a', desc:'光學與雷達對地觀測（Landsat、Sentinel、高分、福衛五號、Planet、ICEYE 等）',
+    re:/^LANDSAT|^SENTINEL|^TERRA$|^AQUA$|^GAOFEN|^GF-|^FLOCK|^SKYSAT|^LEMUR|^ICEYE|^CAPELLA|^UMBRA|^WORLDVIEW|^GEOEYE|^PLEIADES|^SPOT |^KOMPSAT|^FORMOSAT|^JILIN|^SUPERVIEW|^ZIYUAN|^ZY-|^CBERS|^RESOURCESAT|^CARTOSAT|^RISAT|^EOS-|^OCEANSAT|^RADARSAT|^RCM|^COSMO-SKYMED|^CSG|^TERRASAR|^TANDEM|^PAZ|^ALOS|^DOVE|^BLACKSKY|^GLOBAL-|^NUSAT|^HAWK|^SAOCOM|^PELICAN|^TANAGER|^KANOPUS|^RESURS|^THEOS|^VNREDSAT|^DEIMOS|^NOVASAR|^DMC|^HUANJING|^HJ-|^TIANHUI|^LUOJIA|^SIWEI|^BEIJING|^ZHUHAI|^QPS|^STRIX|^GRUS|^ASNARO|^GOSAT|^GCOM|^EARTHCARE|^BIOMASS|^PRISMA|^ENMAP|^AMAZONIA|^KHALIFASAT|^DUBAISAT|^RASAT|^IMECE|^PERUSAT|^NEWSAT|^ALSAT|^NIGERIASAT|^EGYPTSAT|^VRSS|^PRSS|^CHAOHU|^FUCHEN|^HONGTU|^YUNYAO|^GHGSAT|^SPIRE|^HAISI|^TIANYI|^AIRSAT|^PIESAT|^LEGION|^FIRESAT|^WILDFIRE|^IRIDE|^CO3D|^NINGXIA/ },
+  { key:'comm',      name:'通訊／廣播衛星',      color:'#58a6ff', desc:'同步軌道通訊廣播與低軌行動通訊、物聯網（Intelsat、SES、Iridium、Globalstar、中星等）',
+    re:/^INTELSAT|^SES|^EUTELSAT|^ASTRA|^IRIDIUM|^GLOBALSTAR|^ORBCOMM|^INMARSAT|^TDRS|^ECHOSTAR|^DIRECTV|^TELSTAR|^ANIK|^THAICOM|^APSTAR|^ASIASAT|^CHINASAT|^ZHONGXING|^JCSAT|^ARABSAT|^BADR|^NILESAT|^TURKSAT|^HISPASAT|^AMAZONAS|^GALAXY|^SIRIUS|^XM-|^SXM|^VIASAT|^O3B|^THOR|^YAMAL|^EXPRESS|^HOTBIRD|^HOT BIRD|^KOREASAT|^MEASAT|^OPTUS|^NSS|^AMC|^ABS|^GSAT|^INSAT|^TELKOM|^PALAPA|^BSAT|^SUPERBIRD|^NIMIQ|^SKYTERRA|^TIANLIAN|^MOLNIYA|^MERIDIAN|^GONETS|^AL YAH|^ALCOMSAT|^ES'HAIL|^AZERSPACE|^BULGARIASAT|^HELLAS|^AMOS|^KACIFIC|^SKY |^STAR ONE|^BRASILSAT|^TIANTONG|^SWARM|^KINEIS|^ASTROCAST|^MYRIOTA|^GEESAT|^JUPITER|^HYLAS|^KA-SAT|^LAOSAT|^BANGABANDHU|^PAKSAT|^NUSANTARA|^BRISAT|^VINASAT|^TKSAT|^QUETZSAT|^ARSAT|^MEXSAT|^MORELOS|^WILDBLUE|^SPACEWAY|^TERRESTAR|^NBN|^CIEL|^COMS|^RASCOM|^NIGCOMSAT|^ANGOSAT|^TURKMENALEM|^BELINTERSAT|^KAZSAT|^CMS-|^EDRS|^ATHENA|^IS-|^TELE|^EUTE|^G-\d|^E\d+[A-Z]?$|^ST-\d|^CHINASAT|^APSTAR|^TIANQI|^XINGYUN|^SITRO|^APRIZESAT|^CONNECTA|^SATELIOT|^FOSSASAT|^SAUDICOMSAT/ },
+  { key:'amateur',   name:'業餘無線電／立方衛星', color:'#b6e36a', desc:'業餘無線電 (OSCAR) 與大學、教育用立方衛星',
+    re:/OSCAR|^AO-|^FO-|^SO-|^XW-|^CAS-|^FUNCUBE|CUBE|^LILACSAT|AMSAT|^RS-\d|^TEVEL|^NAYIF|^JY1|^FOX-|^NO-|^IO-|^LO-|^EO-|^PO-|^UO-|SAT-\d*U?$/ },
+  { key:'other',     name:'其他／未分類',        color:'#a89a86', desc:'名稱無法判斷用途的衛星', re:/^/ }
+];
+PCATS.forEach(function (c) { c.count = 0; c.on = true; c.rgb = new THREE.Color(c.color); });
+var PCAT_IX = {}; PCATS.forEach(function (c, i) { PCAT_IX[c.key] = i; });
+// CelesTrak 官方用途群組（data/groups.js）→ 本頁的用途分類。排在前面的群組優先。
+// 「弱」群組（同步軌道、立方衛星、SatNOGS）只描述軌道或外型，名稱規則判斷不出用途時才採用。
+var GROUP_MAP = [
+  ['stations', 'station', '太空站'],
+  ['gps-ops', 'gps', 'GPS 現役'],
+  ['glo-ops', 'gnss', 'GLONASS 現役'], ['galileo', 'gnss', 'Galileo'], ['beidou', 'gnss', '北斗'], ['sbas', 'gnss', '星基增強 SBAS'],
+  ['nnss', 'gnss', '美國海軍導航 NNSS'], ['musson', 'gnss', '俄羅斯低軌導航'], ['gnss', 'gnss', 'GNSS'],
+  ['weather', 'weather', '氣象'], ['noaa', 'weather', 'NOAA'], ['goes', 'weather', 'GOES'],
+  ['military', 'military', '軍用'],
+  ['science', 'science', '太空與地球科學'], ['geodetic', 'science', '測地'], ['engineering', 'science', '工程試驗'], ['education', 'science', '教育'],
+  ['resource', 'earthobs', '地球資源'], ['dmc', 'earthobs', '災害監測'], ['planet', 'earthobs', 'Planet'], ['spire', 'earthobs', 'Spire'],
+  ['intelsat', 'comm', 'Intelsat'], ['ses', 'comm', 'SES'], ['eutelsat', 'comm', 'Eutelsat'], ['iridium', 'comm', 'Iridium'],
+  ['iridium-NEXT', 'comm', 'Iridium NEXT'], ['orbcomm', 'comm', 'Orbcomm'], ['globalstar', 'comm', 'Globalstar'], ['tdrss', 'comm', 'TDRSS 中繼'],
+  ['x-comm', 'comm', '實驗通訊'], ['other-comm', 'comm', '其他通訊'], ['gorizont', 'comm', 'Gorizont'], ['raduga', 'comm', 'Raduga'], ['molniya', 'comm', 'Molniya'],
+  ['amateur', 'amateur', '業餘無線電'],
+  ['sarsat', 'weather', '搜救 SARSAT'], ['argos', 'weather', 'ARGOS 資料收集'], ['radar', 'science', '雷達校正'],
+  ['geo', 'comm', '同步軌道', true], ['cubesat', 'amateur', '立方衛星', true], ['satnogs', 'amateur', 'SatNOGS', true], ['other', 'other', '其他', true]
+];
+var idGroups = {};     // NORAD 編號 → 所屬群組在 GROUP_MAP 的索引（已依優先順序排好）
+(function () {
+  var G = window.GROUPS; if (!G) return;
+  GROUP_MAP.forEach(function (m, k) { (G[m[0]] || []).forEach(function (id) { (idGroups[id] = idGroups[id] || []).push(k); }); });
+})();
+// 回傳 [分類索引, 判定依據]：官方群組 → 名稱規則 → 弱群組 → 未分類
+function classifyPurpose(name, id) {
+  var gs = idGroups[id] || [], k, i, last = PCATS.length - 1;
+  if (PCATS[0].re.test(name)) return [0, '名稱'];                                   // 太空站及對接飛船
+  for (k = 0; k < gs.length; k++) if (!GROUP_MAP[gs[k]][3]) return [PCAT_IX[GROUP_MAP[gs[k]][1]], 'CelesTrak 群組'];
+  for (i = 0; i < last; i++) if (PCATS[i].re.test(name)) return [i, '依名稱推定'];
+  for (k = 0; k < gs.length; k++) return [PCAT_IX[GROUP_MAP[gs[k]][1]], 'CelesTrak 群組'];
+  return [last, '無法判斷'];
+}
+// 目前使用的分類方式（cat = 依軌道、pcat = 依用途）
+var SCHEMES = { cat:CATS, pcat:PCATS }, CK = 'cat', ACTIVE = CATS;
+function C(s) { return ACTIVE[s[CK]]; }
+
+function classify(name, periodMin, ecc) {
+  if (/^ISS \(|^CSS \(|^TIANGONG|^PROGRESS-MS|^SOYUZ-MS|^TIANZHOU|^SHENZHOU|DRAGON|^CYGNUS|^HTV/.test(name)) return CAT_IX.station;
+  if (/NAVSTAR|^GPS /.test(name)) return CAT_IX.gps;
+  if (/GALILEO|BEIDOU|GLONASS|^QZS|IRNSS|^NVS-/.test(name)) return CAT_IX.gnss;
+  if (ecc >= 0.25) return CAT_IX.heo;
+  if (periodMin >= 1400 && periodMin <= 1470) return CAT_IX.geo;
+  if (periodMin < 128) return /^STARLINK/.test(name) ? CAT_IX.starlink : CAT_IX.leo;
+  if (periodMin < 1400) return CAT_IX.meo;
+  return CAT_IX.heo;
+}
+
+// ---------- 解析 TLE ----------
+var sats = [];
+(function parse() {
+  var L = window.TLE_DATA.replace(/\r/g, '').split('\n');
+  for (var i = 0; i + 2 < L.length; i++) {
+    var l1 = L[i + 1], l2 = L[i + 2];
+    if (l1.charAt(0) !== '1' || l2.charAt(0) !== '2' || L[i].charAt(1) === ' ' && /^[12] /.test(L[i])) continue;
+    var rec;
+    try { rec = satellite.twoline2satrec(l1, l2); } catch (x) { i += 2; continue; }
+    if (!rec || rec.error) { i += 2; continue; }
+    var name = L[i].trim();
+    var nRad = rec.no / 60;                          // rad/s
+    var a = Math.pow(MU / (nRad * nRad), 1 / 3);     // km
+    var period = 2 * Math.PI / rec.no;               // 分鐘
+    var cat = classify(name, period, rec.ecco);
+    CATS[cat].count++;
+    var sid = l1.substr(2, 5), pc = classifyPurpose(name, sid), pcat = pc[0]; PCATS[pcat].count++;
+    sats.push({ name:name, id:l1.substr(2, 5).trim(), intl:l1.substr(9, 8).trim(), rec:rec, l1:l1, l2:l2,
+      cat:cat, pcat:pcat, pby:pc[1], groups:(idGroups[sid] || []).map(function (k) { return GROUP_MAP[k][2]; }), a:a, period:period, ecc:rec.ecco, inc:rec.inclo * R2D,
+      apo:a * (1 + rec.ecco) - RE, per:a * (1 - rec.ecco) - RE, ok:true, vel:0 });
+    i += 2;
+  }
+  sats.sort(function (p, q) { return p.name < q.name ? -1 : p.name > q.name ? 1 : 0; });
+})();
+var N = sats.length;
+
+function epochDate(rec) { return new Date((rec.jdsatepoch - 2440587.5) * 86400000); }
+(function () {
+  var sum = 0; for (var i = 0; i < N; i += 50) sum += epochDate(sats[i].rec).getTime();
+  var mean = new Date(sum / Math.ceil(N / 50));
+  var age = (Date.now() - mean.getTime()) / 86400000;
+  var s = '共 ' + N.toLocaleString() + ' 顆 · 軌道資料 ' + mean.toISOString().slice(0, 10);
+  if (age > 14) s += ' <span style="color:#ff9f43">（已 ' + Math.round(age) + ' 天，建議更新）</span>';
+  if (window.TLE_SOURCE) s += '<br>來源：' + window.TLE_SOURCE;
+  document.getElementById('datainfo').innerHTML = s;
+})();
+
+// ---------- 3D 場景 ----------
+var view = document.getElementById('view');
+var renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+view.appendChild(renderer.domElement);
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(45, 1, 0.01, 2000);
+
+// 地球
+var TEX = window.TEX || {};
+function pixelTex(r, g, b) { var t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1); t.needsUpdate = true; return t; }
+// 載入內嵌圖片為貼圖；boost > 1 時用疊加方式提亮（星空原圖偏暗）
+function loadTex(src, boost, cb) {
+  if (!src) return;
+  var img = new Image();
+  img.onload = function () {
+    var source = img;
+    if (boost > 1) {
+      var c = document.createElement('canvas'); c.width = img.width; c.height = img.height; var x = c.getContext('2d');
+      x.drawImage(img, 0, 0); x.globalCompositeOperation = 'lighter';
+      for (var k = 1; k < boost; k++) x.drawImage(img, 0, 0);
+      source = c;
+    }
+    var t = new THREE.Texture(source); t.anisotropy = renderer.capabilities.getMaxAnisotropy(); t.needsUpdate = true; cb(t);
+  };
+  img.src = src;
+}
+// 地球：白天用地表貼圖、夜晚用城市燈光貼圖，依太陽方向在晨昏線混合
+var earthU = { dayTex:{ value:pixelTex(36, 70, 110) }, nightTex:{ value:pixelTex(0, 0, 0) }, sunDir:{ value:new THREE.Vector3(1, 0, 0) }, lit:{ value:1 } };
+var earthMat = new THREE.ShaderMaterial({ uniforms:earthU,
+  vertexShader:'varying vec2 vUv; varying vec3 vN; void main(){ vUv=uv; vN=normal; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader:'uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec3 sunDir; uniform float lit; varying vec2 vUv; varying vec3 vN;' +
+    'void main(){ vec3 day=texture2D(dayTex,vUv).rgb; vec3 night=texture2D(nightTex,vUv).rgb; float d=dot(normalize(vN),sunDir);' +
+    ' float k=smoothstep(-0.10,0.14,d); vec3 c=mix(night*1.5+day*0.05, day*(0.62+0.42*clamp(d,0.0,1.0)), k);' +
+    ' gl_FragColor=vec4(mix(day,c,lit),1.0); }' });
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), earthMat));
+loadTex(window.EARTH_IMG, 1, function (t) { earthU.dayTex.value = t; });
+loadTex(TEX.night, 1, function (t) { earthU.nightTex.value = t; });
+
+// 國界與海岸線（Natural Earth 1:50m，TopoJSON 弧線解碼後直接畫線）
+var borders = null;
+(function () {
+  var W = window.WORLD; if (!W || !W.arcs) return;
+  var sc = W.transform.scale, tr = W.transform.translate, seg = [], R = 1.0015;
+  W.arcs.forEach(function (arc) {
+    var x = 0, y = 0, px = 0, py = 0, pz = 0;
+    for (var i = 0; i < arc.length; i++) {
+      x += arc[i][0]; y += arc[i][1];
+      var lon = (x * sc[0] + tr[0]) * D2R, lat = (y * sc[1] + tr[1]) * D2R, cl = Math.cos(lat);
+      var qx = R * cl * Math.cos(lon), qy = R * Math.sin(lat), qz = -R * cl * Math.sin(lon);
+      if (i) seg.push(px, py, pz, qx, qy, qz);
+      px = qx; py = qy; pz = qz;
+    }
+  });
+  var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
+  borders = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0xe8eef8, transparent:true, opacity:0.5 }));
+  scene.add(borders);
+})();
+// 大氣光暈
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.025, 64, 48),
+  new THREE.MeshBasicMaterial({ color:0x4aa3ff, transparent:true, opacity:0.10, side:THREE.BackSide, depthWrite:false })));
+// ---------- 天空：太陽、月球、星空、黃道面 ----------
+// 場景是地球固定座標；天體屬於慣性座標，放進 sky 群組後每幀依恆星時旋轉。
+// 慣性座標 (x,y,z) → 群組內座標 (x, z, -y)
+var sky = new THREE.Group(); scene.add(sky);
+var EPS = 23.4393 * D2R, CE = Math.cos(EPS), SE = Math.sin(EPS);
+function eci(x, y, z, out) { return (out || new THREE.Vector3()).set(x, z, -y); }
+function eclToEci(lam, beta, r, out) {
+  var cb = Math.cos(beta), sb = Math.sin(beta), sl = Math.sin(lam);
+  return eci(r * cb * Math.cos(lam), r * (CE * cb * sl - SE * sb), r * (SE * cb * sl + CE * sb), out);
+}
+function glowTexture(stops) {
+  var c = document.createElement('canvas'); c.width = c.height = 128; var x = c.getContext('2d');
+  var g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  stops.forEach(function (s) { g.addColorStop(s[0], s[1]); });
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+var labelsEl = document.getElementById('labels'), labels = [];
+function addLabel(text, local, layer, big) {
+  var d = document.createElement('div'); d.className = 'lbl' + (big ? ' big' : ''); d.textContent = text; labelsEl.appendChild(d);
+  var l = { el:d, v:local, layer:layer, shown:false }; labels.push(l); return l;
+}
+
+// 星空：真實亮星（赤經 h、赤緯 °、星等）＋隨機暗星背景
+var STARS = [
+ [6.752,-16.72,-1.46,'天狼星'],[6.399,-52.70,-0.74,'老人星'],[14.261,19.18,-0.05,'大角星'],[14.660,-60.83,-0.27,'南門二'],
+ [18.616,38.78,0.03,'織女星'],[5.278,46.00,0.08,'五車二'],[5.242,-8.20,0.13,'參宿七'],[7.655,5.22,0.34,'南河三'],
+ [1.629,-57.24,0.46,'水委一'],[5.919,7.41,0.50,'參宿四'],[14.064,-60.37,0.61,'馬腹一'],[19.846,8.87,0.77,'牛郎星'],
+ [12.443,-63.10,0.76,'十字架二'],[4.599,16.51,0.85,'畢宿五'],[16.490,-26.43,0.96,'心宿二'],[13.420,-11.16,0.97,'角宿一'],
+ [7.755,28.03,1.14,'北河三'],[22.961,-29.62,1.16,'北落師門'],[20.690,45.28,1.25,'天津四'],[12.795,-59.69,1.25,''],
+ [10.140,11.97,1.35,'軒轅十四'],[6.977,-28.97,1.50,''],[7.577,31.89,1.58,''],[17.560,-37.10,1.62,''],[12.519,-57.11,1.63,''],
+ [5.419,6.35,1.64,''],[5.438,28.61,1.65,''],[9.220,-69.72,1.68,''],[5.604,-1.20,1.69,''],[22.137,-46.96,1.74,''],
+ [5.679,-1.94,1.77,''],[12.900,55.96,1.77,''],[11.062,61.75,1.79,''],[3.405,49.86,1.80,''],[7.140,-26.39,1.84,''],
+ [18.403,-34.38,1.85,''],[13.792,49.31,1.86,''],[17.622,-43.00,1.87,''],[8.375,-59.51,1.86,''],[5.992,44.95,1.90,''],
+ [16.811,-69.03,1.92,''],[6.629,16.40,1.93,''],[20.427,-56.74,1.94,''],[2.530,89.26,1.98,'北極星'],[6.378,-17.96,1.98,''],
+ [9.460,-8.66,1.98,''],[2.120,23.46,2.00,''],[0.727,-17.99,2.04,''],[18.921,-26.30,2.05,''],[13.399,54.93,2.23,''],
+ [5.533,-0.30,2.25,''],[5.796,-9.67,2.07,''],[0.140,29.09,2.06,''],[1.163,35.62,2.06,''],[14.845,74.16,2.07,''],
+ [17.582,12.56,2.08,''],[3.136,40.96,2.12,''],[11.818,14.57,2.14,''],[11.031,56.38,2.37,''],[11.897,53.69,2.44,''],
+ [12.257,57.03,3.31,''],[0.675,56.54,2.24,''],[0.153,59.15,2.27,''],[0.945,60.72,2.47,''],[1.430,60.24,2.68,''],[1.907,63.67,3.37,'']
+];
+var starGroup = new THREE.Group(); sky.add(starGroup);
+(function () {
+  // 真實星空與銀河：全天星圖貼在天球內側。原圖是銀道座標（銀心在正中、上下顛倒），逐頂點轉成赤道座標。
+  var fallback = new THREE.Group(); starGroup.add(fallback);
+  loadTex(TEX.stars, 1, function (t) {
+    var NL = 96, NB = 48, P = [], UV = [], IX = [];
+    for (var j = 0; j <= NB; j++) for (var i = 0; i <= NL; i++) {
+      var l = (i / NL - 0.5) * 2 * Math.PI, b = (j / NB - 0.5) * Math.PI, cb = Math.cos(b);
+      var gx = cb * Math.cos(l), gy = cb * Math.sin(l), gz = Math.sin(b);
+      var v = eci(950 * (-0.0548755604 * gx + 0.4941094279 * gy - 0.8676661490 * gz),
+                  950 * (-0.8734370902 * gx - 0.4448296300 * gy - 0.1980763734 * gz),
+                  950 * (-0.4838350155 * gx + 0.7469822445 * gy + 0.4559837762 * gz));
+      P.push(v.x, v.y, v.z); UV.push(1 - i / NL, 1 - j / NB);
+    }
+    for (j = 0; j < NB; j++) for (i = 0; i < NL; i++) { var a = j * (NL + 1) + i, c = a + NL + 1; IX.push(a, a + 1, c, a + 1, c + 1, c); }
+    var sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+    sg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(UV), 2)); sg.setIndex(IX);
+    var m = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map:t, color:0xcccccc, side:THREE.DoubleSide, depthWrite:false }));   // 刻意調暗，避免和衛星光點混淆
+    m.frustumCulled = false; m.renderOrder = -10; starGroup.add(m);
+    fallback.visible = false;                       // 有真實星圖時不再畫示意亮星
+  });
+  // 沒有星圖檔時的後備：隨機暗星＋亮星光點
+  var n = 3500, p = new Float32Array(n * 3);
+  for (var i = 0; i < n; i++) {
+    var u = Math.random() * 2 - 1, th = Math.random() * 6.2832, r = Math.sqrt(1 - u * u);
+    p[i * 3] = 900 * r * Math.cos(th); p[i * 3 + 1] = 900 * u; p[i * 3 + 2] = 900 * r * Math.sin(th);
+  }
+  var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  fallback.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0x66758f, size:1.1, sizeAttenuation:false })));
+  var tiers = [[], [], []];
+  STARS.forEach(function (s) {
+    var ra = s[0] * 15 * D2R, de = s[1] * D2R, cd = Math.cos(de);
+    var v = eci(900 * cd * Math.cos(ra), 900 * cd * Math.sin(ra), 900 * Math.sin(de));
+    tiers[s[2] < 0.6 ? 0 : s[2] < 1.7 ? 1 : 2].push(v.x, v.y, v.z);
+    if (s[3]) addLabel(s[3], v, 'stars');
+  });
+  var tex = glowTexture([[0, '#fff'], [0.25, 'rgba(255,255,255,.9)'], [1, 'rgba(255,255,255,0)']]);
+  [7, 5, 3.5].forEach(function (size, k) {
+    var bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tiers[k]), 3));
+    fallback.add(new THREE.Points(bg, new THREE.PointsMaterial({ color:0xdfe8ff, size:size, sizeAttenuation:false, map:tex, transparent:true, depthWrite:false })));
+  });
+})();
+
+// 黃道面：半透明圓盤＋外環＋指向太陽的連線
+var ECL_R = 75, eclGroup = new THREE.Group(); sky.add(eclGroup);
+(function () {
+  // 圓盤內緣留空（半徑 8 個地球半徑，在同步軌道之外），避免遮住地球與衛星
+  var M = 180, ring = new Float32Array(M * 3), disc = new Float32Array(M * 6), idx = [], v = new THREE.Vector3();
+  for (var i = 0; i < M; i++) {
+    var j = (i + 1) % M;
+    eclToEci(i / M * 2 * Math.PI, 0, ECL_R, v);
+    ring.set([v.x, v.y, v.z], i * 3); disc.set([v.x, v.y, v.z], i * 6);
+    eclToEci(i / M * 2 * Math.PI, 0, 8, v); disc.set([v.x, v.y, v.z], i * 6 + 3);
+    idx.push(i * 2, j * 2, i * 2 + 1, i * 2 + 1, j * 2, j * 2 + 1);
+  }
+  var rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(ring, 3));
+  eclGroup.add(new THREE.LineLoop(rg, new THREE.LineBasicMaterial({ color:0xffd84a, transparent:true, opacity:0.55 })));
+  var dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(disc, 3)); dg.setIndex(idx);
+  eclGroup.add(new THREE.Mesh(dg, new THREE.MeshBasicMaterial({ color:0xffd84a, transparent:true, opacity:0.05, side:THREE.DoubleSide, depthWrite:false })));
+  // 每 30° 一條刻度
+  var ticks = [];
+  for (var k = 0; k < 12; k++) { var a = eclToEci(k * 30 * D2R, 0, ECL_R * 0.96), b = eclToEci(k * 30 * D2R, 0, ECL_R); ticks.push(a.x, a.y, a.z, b.x, b.y, b.z); }
+  var tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ticks), 3));
+  eclGroup.add(new THREE.LineSegments(tg, new THREE.LineBasicMaterial({ color:0xffd84a, transparent:true, opacity:0.55 })));
+  addLabel('春分點 ♈ 黃經 0°', eclToEci(0, 0, ECL_R), 'ecl');
+  addLabel('黃經 90°', eclToEci(Math.PI / 2, 0, ECL_R), 'ecl');
+  addLabel('黃經 180°', eclToEci(Math.PI, 0, ECL_R), 'ecl');
+  addLabel('黃經 270°', eclToEci(Math.PI * 1.5, 0, ECL_R), 'ecl');
+})();
+var sunLine = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
+  new THREE.LineBasicMaterial({ color:0xffd84a, transparent:true, opacity:0.8 }));
+sunLine.frustumCulled = false; eclGroup.add(sunLine);
+
+// 太陽（方向正確，距離未按比例）與月球（距離、大小皆按比例）
+var SUN_D = 600, sunMoon = new THREE.Group(); sky.add(sunMoon);
+// 太陽：有貼圖時畫成真實視角大小（0.53°）的球體加外圍日冕光暈；沒有貼圖時只畫光球
+var sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTexture(TEX.sun
+    ? [[0, 'rgba(255,225,150,.75)'], [0.18, 'rgba(255,200,90,.45)'], [0.45, 'rgba(255,170,50,.12)'], [1, 'rgba(255,160,40,0)']]
+    : [[0, '#fff'], [0.12, '#fff7d0'], [0.3, 'rgba(255,214,90,.55)'], [1, 'rgba(255,180,40,0)']]),
+  transparent:true, depthWrite:false, blending:THREE.AdditiveBlending }));
+// 為了看得清楚，太陽與月球都放大顯示（位置與方向不變）
+var SUN_ZOOM = 6, MOON_ZOOM = 3;
+sunSprite.scale.set(TEX.sun ? 22 * SUN_ZOOM : 70, TEX.sun ? 22 * SUN_ZOOM : 70, 1); sunMoon.add(sunSprite);
+var sunBall = new THREE.Mesh(new THREE.SphereGeometry(SUN_D * Math.tan(0.2666 * D2R), 48, 24), new THREE.MeshBasicMaterial({ color:0xffffff }));
+sunBall.visible = false; sunBall.scale.setScalar(SUN_ZOOM); sunMoon.add(sunBall);
+loadTex(TEX.sun, 1, function (t) { sunBall.material.map = t; sunBall.material.needsUpdate = true; sunBall.visible = true; });
+// 月球：真實表面貼圖，正面（貼圖中央）永遠朝向地球
+var moon = new THREE.Mesh(new THREE.SphereGeometry(1737.4 / RE, 64, 32), new THREE.MeshLambertMaterial({ color:0xb9b6ae }));
+moon.scale.setScalar(MOON_ZOOM); sunMoon.add(moon);
+loadTex(TEX.moon, 1, function (t) { moon.material.map = t; moon.material.color.set(0xffffff); moon.material.needsUpdate = true; });
+var ECL_POLE = new THREE.Vector3(0, CE, SE), mX = new THREE.Vector3(), mY = new THREE.Vector3(), mZ = new THREE.Vector3(), mM = new THREE.Matrix4();
+var MOON_N = 160, moonOrbPos = new Float32Array(MOON_N * 3), moonOrbT = -1e18;
+var moonOrbit = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(moonOrbPos, 3)),
+  new THREE.LineBasicMaterial({ color:0xaab4c8, transparent:true, opacity:0.45 }));
+moonOrbit.frustumCulled = false; sunMoon.add(moonOrbit);
+// 地球到月球的連接線
+var moonLine = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
+  new THREE.LineBasicMaterial({ color:0xdfe6f2, transparent:true, opacity:0.8 }));
+moonLine.frustumCulled = false; sunMoon.add(moonLine);
+var sunLight = new THREE.DirectionalLight(0xffffff, 0.95), ambient = new THREE.AmbientLight(0xffffff, 0.2);
+sky.add(sunLight); scene.add(ambient);
+var sunLabel = addLabel('太陽', sunSprite.position, 'sunmoon', true), moonLabel = addLabel('月球', moon.position, 'sunmoon', true);
+
+// 低精度天文曆（太陽約 0.01°、月球約 0.3°）
+function sunEcl(ms) {
+  var n = ms / 86400000 + 2440587.5 - 2451545.0, g = (357.528 + 0.9856003 * n) * D2R;
+  return { lam:(280.460 + 0.9856474 * n + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R,
+           au:1.00014 - 0.01671 * Math.cos(g) - 0.00014 * Math.cos(2 * g) };
+}
+function moonPos(ms, out) {
+  var T = (ms / 86400000 + 2440587.5 - 2451545.0) / 36525, s = function (a, b) { return Math.sin((a + b * T) * D2R); }, c = function (a, b) { return Math.cos((a + b * T) * D2R); };
+  var lam = 218.32 + 481267.881 * T + 6.29 * s(135.0, 477198.87) - 1.27 * s(259.3, -413335.36) + 0.66 * s(235.7, 890534.22) +
+            0.21 * s(269.9, 954397.74) - 0.19 * s(357.5, 35999.05) - 0.11 * s(186.5, 966404.03);
+  var beta = 5.13 * s(93.3, 483202.02) + 0.28 * s(228.2, 960400.89) - 0.28 * s(318.3, 6003.15) - 0.17 * s(217.6, -407332.21);
+  var par = 0.9508 + 0.0518 * c(135.0, 477198.87) + 0.0095 * c(259.3, -413335.36) + 0.0078 * c(235.7, 890534.22) + 0.0028 * c(269.9, 954397.74);
+  return eclToEci(lam * D2R, beta * D2R, 1 / Math.sin(par * D2R) * 6378.14 / RE, out);
+}
+var skyState = {};
+function updateSky(ms, gmst) {
+  sky.rotation.y = -gmst; sky.updateMatrixWorld(true);
+  var s = sunEcl(ms);
+  eclToEci(s.lam, 0, SUN_D, sunSprite.position); sunLight.position.copy(sunSprite.position);
+  var sl = sunLine.geometry.attributes.position; eclToEci(s.lam, 0, ECL_R, v3); sl.setXYZ(1, v3.x, v3.y, v3.z); sl.needsUpdate = true;
+  sunBall.position.copy(sunSprite.position);
+  earthU.sunDir.value.copy(sunSprite.position).applyMatrix4(sky.matrixWorld).normalize();
+  moonPos(ms, moon.position);
+  var ml0 = moonLine.geometry.attributes.position; ml0.setXYZ(1, moon.position.x, moon.position.y, moon.position.z); ml0.needsUpdate = true;
+  mX.copy(moon.position).normalize().negate(); mZ.crossVectors(mX, ECL_POLE).normalize(); mY.crossVectors(mZ, mX);
+  moon.quaternion.setFromRotationMatrix(mM.makeBasis(mX, mY, mZ));
+  if (Math.abs(ms - moonOrbT) > 3600000) {
+    moonOrbT = ms; var t = new THREE.Vector3();
+    for (var k = 0; k < MOON_N; k++) { moonPos(ms + 27.3217 * 86400000 * k / (MOON_N - 1), t); moonOrbPos.set([t.x, t.y, t.z], k * 3); }
+    moonOrbit.geometry.attributes.position.needsUpdate = true;
+  }
+  // 月相：太陽與月球的黃經差
+  var ml = Math.atan2((moon.position.y * SE - moon.position.z * CE), moon.position.x);   // 由群組座標還原黃經
+  var ph = ((ml - s.lam) * R2D % 360 + 360) % 360;
+  skyState = { sunLam:s.lam * R2D % 360, sunAU:s.au, moonKm:moon.position.length() * RE, phase:ph };
+}
+var PHASES = ['新月', '眉月', '上弦月', '盈凸月', '滿月', '虧凸月', '下弦月', '殘月'];
+function updateLabels() {
+  var w = el.clientWidth, h = el.clientHeight, C = camera.position;
+  for (var i = 0; i < labels.length; i++) {
+    var l = labels[i], show = layerOn[l.layer] && !(l.maxDist && cam.dist > l.maxDist);
+    if (show) {
+      v3.copy(l.v); if (!l.fixed) v3.applyMatrix4(sky.matrixWorld);   // fixed = 固定在地球上的標籤
+      var ex = v3.x - C.x, ey = v3.y - C.y, ez = v3.z - C.z, t = -(C.x * ex + C.y * ey + C.z * ez) / (ex * ex + ey * ey + ez * ez);
+      if (t > 0 && t < 1) { var qx = C.x + t * ex, qy = C.y + t * ey, qz = C.z + t * ez; if (qx * qx + qy * qy + qz * qz < 1) show = false; }
+      if (show) { v3.project(camera); if (v3.z > 1 || v3.z < -1 || Math.abs(v3.x) > 1.05 || Math.abs(v3.y) > 1.05) show = false; }
+    }
+    if (show) { l.el.style.left = ((v3.x + 1) * w / 2).toFixed(1) + 'px'; l.el.style.top = ((1 - v3.y) * h / 2).toFixed(1) + 'px'; }
+    if (show !== l.shown) { l.el.style.display = show ? 'block' : 'none'; l.shown = show; }
+  }
+}
+var layerOn = { sunmoon:true, stars:true, ecl:true };
+function bindSky(id, fn) { document.getElementById(id).onchange = function (e) { fn(e.target.checked); }; }
+bindSky('sk_sunmoon', function (on) { layerOn.sunmoon = sunMoon.visible = on; });
+bindSky('sk_stars', function (on) { layerOn.stars = starGroup.visible = on; });
+bindSky('sk_ecl', function (on) { layerOn.ecl = eclGroup.visible = on; });
+bindSky('sk_light', function (on) { sunLight.intensity = on ? 1.1 : 0; ambient.intensity = on ? 0.06 : 1; earthU.lit.value = on ? 1 : 0; });
+bindSky('sk_border', function (on) { if (borders) borders.visible = on; });
+sunLight.intensity = 1.1; ambient.intensity = 0.06;
+
+// ---------- 地球經緯線 ----------
+function llv(lat, lon, R) { var cl = Math.cos(lat * D2R); return new THREE.Vector3(R * cl * Math.cos(lon * D2R), R * Math.sin(lat * D2R), -R * cl * Math.sin(lon * D2R)); }
+var gridGroup = new THREE.Group(); scene.add(gridGroup);
+(function () {
+  var minor = [], major = [], R = 1.001, a, b, t;
+  function seg(arr, la1, lo1, la2, lo2) { var p = llv(la1, lo1, R), q = llv(la2, lo2, R); arr.push(p.x, p.y, p.z, q.x, q.y, q.z); }
+  for (a = -75; a <= 75; a += 15) { t = a === 0 ? major : minor; for (b = 0; b < 360; b += 2) seg(t, a, b, a, b + 2); }          // 緯線，每 15°
+  for (b = 0; b < 360; b += 15) { t = (b === 0 || b === 180) ? major : minor; for (a = -90; a < 90; a += 2) seg(t, a, b, a + 2, b); } // 經線，每 15°
+  [[minor, 0.22], [major, 0.6]].forEach(function (d) {
+    var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(d[0]), 3));
+    gridGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0x9fd0ff, transparent:true, opacity:d[1] })));
+  });
+  function lab(text, lat, lon) { var l = addLabel(text, llv(lat, lon, 1.012), 'grid'); l.fixed = true; l.maxDist = 9; l.el.style.color = '#9fd0ff'; }
+  for (b = -150; b <= 180; b += 30) lab(b === 0 ? '0°' : b === 180 ? '180°' : Math.abs(b) + '°' + (b > 0 ? 'E' : 'W'), 0, b);
+  [-60, -30, 30, 60].forEach(function (la) { [0, 90, 180, -90].forEach(function (lo) { lab(Math.abs(la) + '°' + (la > 0 ? 'N' : 'S'), la, lo); }); });
+})();
+
+// ---------- 太陽直射點與月下點在地表的軌跡（前後各 12 小時，每小時一個點）----------
+var trackGroup = new THREE.Group(); scene.add(trackGroup);
+var TRK_N = 72, TRK_DT = 600000, trackT = -1e18, YAX = new THREE.Vector3(0, 1, 0), tv = new THREE.Vector3();
+function mkTrack(color, name) {
+  var o = { name:name };
+  function line(n, opacity) {
+    var l = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)),
+      new THREE.LineBasicMaterial({ color:color, transparent:true, opacity:opacity }));
+    l.frustumCulled = false; trackGroup.add(l); return l.geometry.attributes.position;
+  }
+  function pts(n, size) {
+    var p = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)),
+      new THREE.PointsMaterial({ color:color, size:size, sizeAttenuation:false, map:discTexture(), alphaTest:0.5 }));
+    p.frustumCulled = false; trackGroup.add(p); return p.geometry.attributes.position;
+  }
+  o.past = line(TRK_N + 1, 0.4); o.future = line(TRK_N + 1, 1); o.dots = pts(25, 5); o.now = pts(1, 12);
+  o.label = addLabel(name, new THREE.Vector3(), 'track', true); o.label.fixed = true;
+  return o;
+}
+var sunTrack = mkTrack(0xffd84a, '太陽直射點'), moonTrack = mkTrack(0xffffff, '月下點');
+function fillTrack(o, ms, dirFn) {
+  for (var k = -TRK_N; k <= TRK_N; k++) {
+    var t = ms + k * TRK_DT;
+    dirFn(t, tv); tv.normalize().multiplyScalar(1.004).applyAxisAngle(YAX, -satellite.gstime(new Date(t)));
+    if (k <= 0) o.past.setXYZ(k + TRK_N, tv.x, tv.y, tv.z);
+    if (k >= 0) o.future.setXYZ(k, tv.x, tv.y, tv.z);
+    if (k % 6 === 0) o.dots.setXYZ(k / 6 + 12, tv.x, tv.y, tv.z);
+    if (k === 0) {
+      o.now.setXYZ(0, tv.x, tv.y, tv.z); o.label.v.copy(tv);
+      var lat = Math.asin(tv.y / 1.004) * R2D, lon = Math.atan2(-tv.z, tv.x) * R2D;
+      o.label.el.textContent = o.name + ' ' + Math.abs(lat).toFixed(1) + '°' + (lat >= 0 ? 'N' : 'S') + ' ' + Math.abs(lon).toFixed(1) + '°' + (lon >= 0 ? 'E' : 'W');
+    }
+  }
+  o.past.needsUpdate = o.future.needsUpdate = o.dots.needsUpdate = o.now.needsUpdate = true;
+}
+function updateTracks(ms) {
+  if (Math.abs(ms - trackT) < 20000) return;
+  trackT = ms;
+  fillTrack(sunTrack, ms, function (t, out) { eclToEci(sunEcl(t).lam, 0, 1, out); });
+  fillTrack(moonTrack, ms, moonPos);
+}
+layerOn.grid = layerOn.track = true;
+bindSky('sk_grid', function (on) { layerOn.grid = gridGroup.visible = on; });
+bindSky('sk_track', function (on) { layerOn.track = trackGroup.visible = on; });
+
+// 衛星點
+function discTexture() {
+  var c = document.createElement('canvas'); c.width = c.height = 32; var x = c.getContext('2d');
+  x.beginPath(); x.arc(16, 16, 14, 0, 6.2832); x.fillStyle = '#fff'; x.fill();
+  return new THREE.CanvasTexture(c);
+}
+var pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+var geo = new THREE.BufferGeometry();
+function recolor() {
+  for (var i = 0; i < N; i++) { var c = C(sats[i]).rgb; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+  if (geo.attributes.color) geo.attributes.color.needsUpdate = true;
+}
+recolor();
+geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
+var points = new THREE.Points(geo, new THREE.PointsMaterial({ size:4, sizeAttenuation:false, vertexColors:true, map:discTexture(), alphaTest:0.5 }));
+points.frustumCulled = false;
+scene.add(points);
+
+// 太空站：另外疊一層較大的光點並加上名稱標籤
+var stIdx = []; sats.forEach(function (s, i) { if (s.cat === CAT_IX.station) stIdx.push(i); });
+var stPos = new Float32Array(Math.max(1, stIdx.length) * 3);
+var stPoints = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(stPos, 3)),
+  new THREE.PointsMaterial({ size:11, sizeAttenuation:false, color:CATS[CAT_IX.station].color, map:discTexture(), alphaTest:0.5 }));
+stPoints.frustumCulled = false; scene.add(stPoints);
+var stLabels = [];
+[[/^ISS \(ZARYA\)/, '國際太空站 ISS'], [/^CSS \(TIANHE\)/, '天宮太空站 CSS']].forEach(function (d) {
+  for (var i = 0; i < N; i++) if (d[0].test(sats[i].name)) {
+    var l = addLabel(d[1], new THREE.Vector3(), 'station', true); l.fixed = true; l.el.style.color = CATS[CAT_IX.station].color;
+    stLabels.push({ i:i, l:l }); break;
+  }
+});
+function updateStations() {
+  var on = stIdx.length > 0 && C(sats[stIdx[0]]).on; layerOn.station = stPoints.visible = on;
+  if (!on) return;
+  for (var k = 0; k < stIdx.length; k++) { var o = stIdx[k] * 3; stPos[k * 3] = pos[o]; stPos[k * 3 + 1] = pos[o + 1]; stPos[k * 3 + 2] = pos[o + 2]; }
+  stPoints.geometry.attributes.position.needsUpdate = true;
+  stLabels.forEach(function (d) { d.l.v.set(pos[d.i * 3], pos[d.i * 3 + 1], pos[d.i * 3 + 2]); });
+}
+// 投影模式：把每顆衛星畫在它正下方的地表（星下點）
+var projectOn = false;
+document.getElementById('sk_proj').onchange = function (e) { projectOn = e.target.checked; fullPass = true; };
+// 選單收合
+document.getElementById('collapse').onclick = function () {
+  var p = document.getElementById('left'), c = p.classList.toggle('collapsed');
+  this.textContent = c ? '☰ 選單' : '收合 »';
+  if (!c) renderList();
+};
+
+// 選取標記與軌道線
+var marker = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3)),
+  new THREE.PointsMaterial({ size:13, sizeAttenuation:false, color:0xffffff, map:discTexture(), alphaTest:0.5 }));
+marker.frustumCulled = false; marker.visible = false; scene.add(marker);
+var ORB = 240, orbPos = new Float32Array((ORB + 1) * 3);
+var orbit = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(orbPos, 3)),
+  new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.75 }));
+orbit.frustumCulled = false; orbit.visible = false; scene.add(orbit);
+var nadir = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3)),
+  new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.4 }));
+nadir.frustumCulled = false; nadir.visible = false; scene.add(nadir);
+
+// ---------- 相機控制 ----------
+var cam = { lon:121 * D2R, lat:23.5 * D2R, dist:4.2 };
+function placeCamera() {
+  var cl = Math.cos(cam.lat);
+  // ECEF (x,y,z) → three (x, z, -y)
+  camera.position.set(cam.dist * cl * Math.cos(cam.lon), cam.dist * Math.sin(cam.lat), -cam.dist * cl * Math.sin(cam.lon));
+  camera.lookAt(0, 0, 0);
+}
+function resize() {
+  var w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize); resize();
+
+var el = renderer.domElement, drag = null, moved = 0, pointers = {}, pinch = 0;
+el.style.touchAction = 'none';
+el.addEventListener('pointerdown', function (e) {
+  el.setPointerCapture(e.pointerId); pointers[e.pointerId] = { x:e.clientX, y:e.clientY };
+  drag = { x:e.clientX, y:e.clientY }; moved = 0; pinch = 0;
+});
+el.addEventListener('pointermove', function (e) {
+  if (pointers[e.pointerId]) pointers[e.pointerId] = { x:e.clientX, y:e.clientY };
+  var ids = Object.keys(pointers);
+  if (ids.length === 2) {
+    var a = pointers[ids[0]], b = pointers[ids[1]], d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinch) zoom(pinch / d); pinch = d; moved = 99; return;
+  }
+  if (drag && ids.length === 1) {
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y; moved += Math.abs(dx) + Math.abs(dy);
+    var k = 0.0022 * Math.min(1.6, (cam.dist - 1) / 1.6 + 0.08);
+    cam.lon -= dx * k; cam.lat = Math.max(-1.55, Math.min(1.55, cam.lat + dy * k));
+    drag.x = e.clientX; drag.y = e.clientY;
+  } else { hoverXY = { x:e.clientX, y:e.clientY }; }
+});
+function up(e) {
+  delete pointers[e.pointerId]; pinch = 0;
+  if (drag && moved < 5) { var h = pick(e.clientX, e.clientY, 10); select(h); }
+  drag = null;
+}
+el.addEventListener('pointerup', up);
+el.addEventListener('pointercancel', function (e) { delete pointers[e.pointerId]; drag = null; });
+el.addEventListener('pointerleave', function () { hoverXY = null; tip.style.display = 'none'; });
+function zoom(f) { cam.dist = Math.max(1.08, Math.min(220,1 + (cam.dist - 1) * f)); }
+el.addEventListener('wheel', function (e) { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.0012)); }, { passive:false });
+
+// ---------- 點選 ----------
+var tip = document.getElementById('tip'), hoverXY = null, v3 = new THREE.Vector3();
+function pick(cx, cy, radius) {
+  var r = el.getBoundingClientRect(), w = r.width, h = r.height, mx = cx - r.left, my = cy - r.top;
+  var C = camera.position, best = -1, bd = radius * radius;
+  camera.updateMatrixWorld();
+  for (var i = 0; i < N; i++) {
+    var s = sats[i]; if (!s.ok || !ACTIVE[s[CK]].on) continue;   // 這裡的 C 是相機位置，不能呼叫分類函式 C(s)
+    var x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    v3.set(x, y, z).project(camera);
+    if (v3.z > 1 || v3.z < -1) continue;
+    var dx = (v3.x + 1) * w / 2 - mx, dy = (1 - v3.y) * h / 2 - my, d = dx * dx + dy * dy;
+    if (d >= bd) continue;
+    // 是否被地球遮住
+    var ex = x - C.x, ey = y - C.y, ez = z - C.z, t = -(C.x * ex + C.y * ey + C.z * ez) / (ex * ex + ey * ey + ez * ez);
+    if (t > 0 && t < 1) { var qx = C.x + t * ex, qy = C.y + t * ey, qz = C.z + t * ez; if (qx * qx + qy * qy + qz * qz < 1) continue; }
+    bd = d; best = i;
+  }
+  return best;
+}
+
+// ---------- 時間 ----------
+var simTime = Date.now(), speed = 1, lastReal = performance.now();
+var clock = document.getElementById('clock');
+document.querySelectorAll('#time button[data-s]').forEach(function (b) {
+  b.onclick = function () {
+    speed = +b.dataset.s;
+    document.querySelectorAll('#time button[data-s]').forEach(function (o) { o.classList.toggle('on', o === b); });
+  };
+});
+document.getElementById('now').onclick = function () { simTime = Date.now(); cursor = 0; fullPass = true; };
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+function fmtLocal(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
+
+// ---------- 軌道推算 ----------
+var cursor = 0, fullPass = true;
+function propagateOne(i, date, gmst) {
+  var s = sats[i], o = i * 3, pv = null;
+  if (C(s).on) { try { pv = satellite.propagate(s.rec, date); } catch (x) { pv = null; } }
+  var p = pv && pv.position;
+  if (!p || isNaN(p.x)) { s.ok = false; pos[o] = pos[o + 1] = pos[o + 2] = 0; return; }
+  var cg = Math.cos(gmst), sg = Math.sin(gmst);
+  var ex = p.x * cg + p.y * sg, ey = -p.x * sg + p.y * cg;
+  var X = ex / RE, Y = p.z / RE, Z = -ey / RE;
+  if (projectOn) { var pk = 1.006 / Math.sqrt(X * X + Y * Y + Z * Z); X *= pk; Y *= pk; Z *= pk; }
+  pos[o] = X; pos[o + 1] = Y; pos[o + 2] = Z;
+  s.ok = true;
+  var v = pv.velocity; s.vel = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+function step(date, budgetMs) {
+  var gmst = satellite.gstime(date), t0 = performance.now(), n = 0;
+  while (n < N) {
+    propagateOne(cursor, date, gmst); cursor = (cursor + 1) % N; n++;
+    if (!fullPass && (n & 127) === 0 && performance.now() - t0 > budgetMs) break;
+  }
+  fullPass = false;
+  geo.attributes.position.needsUpdate = true;
+}
+
+// ---------- 選取與詳細資訊 ----------
+var selected = -1, infoEl = document.getElementById('info'), infoBody = document.getElementById('infobody'), lastOrbit = 0;
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
+function fmt(n, d) { return n.toLocaleString('en-US', { minimumFractionDigits:d, maximumFractionDigits:d }); }
+function select(i, focus) {
+  selected = i; marker.visible = orbit.visible = nadir.visible = i >= 0;
+  infoEl.style.display = i >= 0 ? 'block' : 'none';
+  renderList();
+  if (i < 0) return;
+  var s = sats[i], c = C(s), oc = CATS[s.cat], pc = PCATS[s.pcat];
+  if (!c.on) { c.on = true; document.getElementById('cat_' + c.key).checked = true; fullPass = true; applyFilter(); }
+  var yy = +s.intl.substr(0, 2), ly = isNaN(yy) ? '—' : (yy < 57 ? 2000 + yy : 1900 + yy);
+  var ep = epochDate(s.rec), q = encodeURIComponent(s.name + ' satellite');
+  infoBody.innerHTML =
+    '<h2>' + esc(s.name) + '</h2>' +
+    '<span class="tag" style="background:' + oc.color + '" title="依軌道">' + esc(oc.name) + '</span> ' +
+    '<span class="tag" style="background:' + pc.color + '" title="依用途">' + esc(pc.name) + '</span>' +
+    '<div style="color:var(--dim);font-size:11px;margin-bottom:4px">軌道：' + esc(oc.desc) + '<br>用途：' + esc(pc.desc) +
+    '<br>用途判定：' + esc(s.pby) + (s.groups.length ? '<br>CelesTrak 群組：' + esc(s.groups.join('、')) : '') + '</div>' +
+    '<h3>即時位置</h3><table>' +
+    '<tr><td>緯度</td><td id="i_lat"></td></tr><tr><td>經度</td><td id="i_lon"></td></tr>' +
+    '<tr><td>高度</td><td id="i_alt"></td></tr><tr><td>速度</td><td id="i_vel"></td></tr></table>' +
+    '<h3>識別資訊</h3><table>' +
+    '<tr><td>NORAD 編號</td><td>' + esc(s.id) + '</td></tr>' +
+    '<tr><td>國際編號</td><td>' + esc(ly + '-' + s.intl.substr(2)) + '</td></tr>' +
+    '<tr><td>發射年份</td><td>' + ly + '</td></tr></table>' +
+    '<h3>軌道參數</h3><table>' +
+    '<tr><td>軌道週期</td><td>' + fmt(s.period, 1) + ' 分鐘（每日 ' + fmt(1440 / s.period, 2) + ' 圈）</td></tr>' +
+    '<tr><td>軌道傾角</td><td>' + fmt(s.inc, 2) + '°</td></tr>' +
+    '<tr><td>離心率</td><td>' + s.ecc.toFixed(6) + '</td></tr>' +
+    '<tr><td>近地點高度</td><td>' + fmt(s.per, 0) + ' km</td></tr>' +
+    '<tr><td>遠地點高度</td><td>' + fmt(s.apo, 0) + ' km</td></tr>' +
+    '<tr><td>半長軸</td><td>' + fmt(s.a, 0) + ' km</td></tr>' +
+    '<tr><td>資料曆元 (UTC)</td><td>' + ep.toISOString().slice(0, 16).replace('T', ' ') + '</td></tr></table>' +
+    '<h3>外部連結（需連網）</h3>' +
+    '<a target="_blank" rel="noopener" href="https://www.n2yo.com/satellite/?s=' + s.id + '">N2YO 即時追蹤</a>' +
+    '<a target="_blank" rel="noopener" href="https://www.heavens-above.com/orbit.aspx?satid=' + s.id + '">Heavens-Above</a>' +
+    '<a target="_blank" rel="noopener" href="https://celestrak.org/NORAD/elements/gp.php?CATNR=' + s.id + '&FORMAT=tle">CelesTrak 軌道資料</a>' +
+    '<a target="_blank" rel="noopener" href="https://www.google.com/search?q=' + q + '">Google 搜尋</a>' +
+    '<a target="_blank" rel="noopener" href="https://zh.wikipedia.org/w/index.php?search=' + encodeURIComponent(s.name) + '">維基百科</a>' +
+    '<h3>TLE 原始資料</h3><pre>' + esc(s.l1) + '\n' + esc(s.l2) + '</pre>';
+  lastOrbit = 0;
+  if (focus) { propagateOne(i, new Date(simTime), satellite.gstime(new Date(simTime))); focusOn(i); }
+}
+document.getElementById('close').onclick = function () { select(-1); };
+function focusOn(i) {
+  var x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2], r = Math.sqrt(x * x + y * y + z * z);
+  if (!r) return;
+  cam.lat = Math.asin(y / r); cam.lon = Math.atan2(-z, x);
+  if (cam.dist < r + 0.6) cam.dist = r + 1.5;
+}
+function updateSelected(date) {
+  var s = sats[selected], gmst = satellite.gstime(date), pv;
+  try { pv = satellite.propagate(s.rec, date); } catch (x) { return; }
+  if (!pv || !pv.position) return;
+  var g = satellite.eciToGeodetic(pv.position, gmst), lat = g.latitude * R2D, lon = g.longitude * R2D;
+  if (lon > 180) lon -= 360; if (lon < -180) lon += 360;
+  var o = selected * 3; propagateOne(selected, date, gmst);
+  var m = marker.geometry.attributes.position; m.setXYZ(0, pos[o], pos[o + 1], pos[o + 2]); m.needsUpdate = true;
+  // 垂直線一律從衛星的真實位置連到地心（投影模式下可看出衛星實際高度）
+  var ncg = Math.cos(gmst), nsg = Math.sin(gmst), pp = pv.position;
+  var nd = nadir.geometry.attributes.position;
+  nd.setXYZ(0, (pp.x * ncg + pp.y * nsg) / RE, pp.z / RE, -(-pp.x * nsg + pp.y * ncg) / RE); nd.setXYZ(1, 0, 0, 0); nd.needsUpdate = true;
+  var $ = function (id) { return document.getElementById(id); };
+  if ($('i_lat')) {
+    $('i_lat').textContent = Math.abs(lat).toFixed(3) + '° ' + (lat >= 0 ? 'N' : 'S');
+    $('i_lon').textContent = Math.abs(lon).toFixed(3) + '° ' + (lon >= 0 ? 'E' : 'W');
+    $('i_alt').textContent = fmt(g.height, 1) + ' km';
+    $('i_vel').textContent = fmt(s.vel, 2) + ' km/s（' + fmt(s.vel * 3600, 0) + ' km/h）';
+  }
+  // 軌道線（慣性座標系下的一整圈）
+  var now = performance.now();
+  if (now - lastOrbit > 400) {
+    lastOrbit = now;
+    var cg = Math.cos(gmst), sg = Math.sin(gmst), T = s.period * 60000;
+    for (var k = 0; k <= ORB; k++) {
+      var p = null;
+      try { p = satellite.propagate(s.rec, new Date(date.getTime() + T * k / ORB)).position; } catch (x) {}
+      if (!p || isNaN(p.x)) { orbPos[k * 3] = pos[o]; orbPos[k * 3 + 1] = pos[o + 1]; orbPos[k * 3 + 2] = pos[o + 2]; continue; }
+      orbPos[k * 3] = (p.x * cg + p.y * sg) / RE; orbPos[k * 3 + 1] = p.z / RE; orbPos[k * 3 + 2] = -(-p.x * sg + p.y * cg) / RE;
+    }
+    orbit.geometry.attributes.position.needsUpdate = true;
+  }
+}
+
+// ---------- 左側清單 ----------
+var catsEl = document.getElementById('cats'), listEl = document.getElementById('list'), inner = document.getElementById('listinner');
+var searchEl = document.getElementById('search'), listInfo = document.getElementById('listinfo'), filtered = [], ROW = 22;
+function buildCats() {
+  catsEl.innerHTML = '';
+  ACTIVE.forEach(function (c) {
+    var l = document.createElement('label');
+    l.title = c.desc;
+    l.innerHTML = '<input type="checkbox"' + (c.on ? ' checked' : '') + ' id="cat_' + c.key + '"><span class="dot" style="background:' + c.color + '"></span>' +
+      esc(c.name) + '<span class="n">' + c.count.toLocaleString() + '</span>';
+    l.querySelector('input').onchange = function (e) { c.on = e.target.checked; fullPass = true; applyFilter(); };
+    catsEl.appendChild(l);
+  });
+}
+function setScheme(k) {
+  CK = k; ACTIVE = SCHEMES[k];
+  document.querySelectorAll('#scheme button').forEach(function (b) { b.classList.toggle('on', b.dataset.k === k); });
+  document.getElementById('schemenote').style.display = k === 'pcat' ? 'block' : 'none';
+  buildCats(); recolor(); fullPass = true; applyFilter();
+}
+document.querySelectorAll('#scheme button').forEach(function (b) { b.onclick = function () { setScheme(b.dataset.k); }; });
+document.querySelectorAll('#catall button').forEach(function (b) {
+  b.onclick = function () { var on = b.dataset.on === '1'; ACTIVE.forEach(function (c) { c.on = on; }); buildCats(); fullPass = true; applyFilter(); };
+});
+// 區塊收合
+document.querySelectorAll('#left .sechead').forEach(function (h) {
+  h.onclick = function () { h.parentNode.classList.toggle('closed'); renderList(); };
+});
+buildCats();
+function applyFilter() {
+  var q = searchEl.value.trim().toUpperCase(); filtered = [];
+  for (var i = 0; i < N; i++) {
+    var s = sats[i]; if (!C(s).on) continue;
+    if (q && s.name.toUpperCase().indexOf(q) < 0 && s.id.indexOf(q) < 0) continue;
+    filtered.push(i);
+  }
+  listInfo.textContent = '顯示 ' + filtered.length.toLocaleString() + ' / ' + N.toLocaleString() + ' 顆';
+  inner.style.height = filtered.length * ROW + 'px';
+  listEl.scrollTop = 0; renderList();
+}
+function renderList() {
+  var top = listEl.scrollTop, h = listEl.clientHeight, a = Math.max(0, Math.floor(top / ROW) - 3), b = Math.min(filtered.length, Math.ceil((top + h) / ROW) + 3), html = '';
+  for (var k = a; k < b; k++) {
+    var i = filtered[k], s = sats[i];
+    html += '<div class="row' + (i === selected ? ' sel' : '') + '" data-i="' + i + '" style="top:' + k * ROW + 'px"><span class="dot" style="background:' +
+      C(s).color + '"></span>' + esc(s.name) + '<span class="id">' + esc(s.id) + '</span></div>';
+  }
+  inner.innerHTML = html;
+}
+listEl.addEventListener('scroll', renderList);
+window.addEventListener('resize', renderList);
+inner.addEventListener('click', function (e) { var r = e.target.closest('.row'); if (r) select(+r.dataset.i, true); });
+searchEl.addEventListener('input', applyFilter);
+applyFilter();
+
+// ---------- 主迴圈 ----------
+var lastClock = 0;
+function frame() {
+  requestAnimationFrame(frame);
+  var nowR = performance.now(), dt = Math.min(nowR - lastReal, 250); lastReal = nowR;
+  simTime += dt * speed;
+  var date = new Date(simTime);
+  step(date, 7);
+  if (selected >= 0) updateSelected(date);
+  updateSky(simTime, satellite.gstime(date));
+  updateTracks(simTime);
+  updateStations();
+  placeCamera();
+  renderer.render(scene, camera);
+  updateLabels();
+  if (nowR - lastClock > 200) {
+    lastClock = nowR;
+    sunLabel.el.textContent = '太陽 · ' + fmt(skyState.sunAU * 1.495979, 3) + ' 億 km（放大 ' + SUN_ZOOM + ' 倍、距離未按比例）';
+    moonLabel.el.textContent = '月球 · ' + fmt(skyState.moonKm, 0) + ' km · ' + PHASES[Math.floor((skyState.phase + 22.5) / 45) % 8] + '（放大 ' + MOON_ZOOM + ' 倍）';
+    clock.textContent = fmtLocal(date) + '（UTC ' + date.toISOString().slice(11, 19) + '）';
+    if (hoverXY && !drag) {
+      var h = pick(hoverXY.x, hoverXY.y, 8);
+      if (h >= 0) { tip.textContent = sats[h].name; tip.style.display = 'block'; tip.style.left = hoverXY.x + 14 + 'px'; tip.style.top = hoverXY.y + 10 + 'px'; el.style.cursor = 'pointer'; }
+      else { tip.style.display = 'none'; el.style.cursor = 'grab'; }
+    }
+  }
+}
+window.__sat = { sats:sats, select:select, cats:CATS, pcats:PCATS, setScheme:setScheme, cam:cam, sky:function () { return skyState; },
+  sublunar:function () { var p = moon.position.clone().applyMatrix4(sky.matrixWorld), r = p.length(); p.normalize(); return { lat:Math.asin(p.y) * R2D, lon:Math.atan2(-p.z, p.x) * R2D, r:r }; },
+  subsolar:function () { var p = sunSprite.position.clone().applyMatrix4(sky.matrixWorld).normalize(); return { lat:Math.asin(p.y) * R2D, lon:Math.atan2(-p.z, p.x) * R2D }; } };
+frame();
+}
+
+// ---------- 啟動：決定用哪一份軌道資料，再啟動主程式 ----------
+// 優先順序：線上最新（資料超過一天且有網路時自動下載）→ 先前下載並存在瀏覽器裡的 → 資料夾內建的 data/tle.js
+(function boot() {
+  var LIVE_URL = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle', MAX_AGE = 24 * 3600000;
+  var bundledT = Date.parse(window.TLE_FETCHED || '') || 0;
+  window.TLE_SOURCE = '內建資料';
+  function openDB() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open('sat-tracker', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+      r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
+    });
+  }
+  function getCache() {
+    return openDB().then(function (db) {
+      return new Promise(function (res) {
+        var q = db.transaction('kv').objectStore('kv').get('tle');
+        q.onsuccess = function () { res(q.result || null); }; q.onerror = function () { res(null); };
+      });
+    }).catch(function () { return null; });
+  }
+  function putCache(v) {
+    return openDB().then(function (db) {
+      return new Promise(function (res) {
+        var t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, 'tle');
+        t.oncomplete = res; t.onerror = res; t.onabort = res;
+      });
+    }).catch(function () {});
+  }
+  function valid(t) { return typeof t === 'string' && (t.match(/^1 \d{5}/gm) || []).length > 100; }
+  function fetchLive() {
+    var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 15000);
+    return fetch(LIVE_URL, { signal:ctl.signal, cache:'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function (t) {
+      clearTimeout(timer); t = t.replace(/\r/g, '');
+      if (!valid(t)) throw new Error('回傳內容不是 TLE');
+      return t;
+    });
+  }
+  function hhmm(ms) { var d = new Date(ms), p = function (n) { return (n < 10 ? '0' : '') + n; }; return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
+  var info = document.getElementById('datainfo'), btn = document.getElementById('refresh');
+  btn.onclick = function () {
+    btn.disabled = true; btn.textContent = '下載中…';
+    fetchLive().then(function (t) { return putCache({ t:Date.now(), tle:t }); })
+      .then(function () { location.reload(); })
+      .catch(function (e) {
+        var m = String(e && e.message || e), limited = /HTTP 403/.test(m);   // CelesTrak 同一份資料兩小時內重複下載會回 403
+        btn.disabled = false; btn.textContent = limited ? '⟳ 已是最新，稍後再試' : '⟳ 更新失敗，重試';
+        btn.title = limited ? 'CelesTrak 限制同一份資料兩小時內不可重複下載，目前的資料已是最新' : m;
+      });
+  };
+  getCache().then(function (c) {
+    var bestT = bundledT;
+    if (c && c.t > bundledT && valid(c.tle)) { window.TLE_DATA = c.tle; bestT = c.t; window.TLE_SOURCE = '線上下載（' + hhmm(c.t) + '）'; }
+    if (Date.now() - bestT > MAX_AGE && navigator.onLine !== false) {
+      info.textContent = '正在線上下載最新軌道資料…';
+      return fetchLive().then(function (t) {
+        window.TLE_DATA = t; window.TLE_SOURCE = '線上下載（' + hhmm(Date.now()) + '）';
+        return putCache({ t:Date.now(), tle:t });
+      }).catch(function () { window.TLE_SOURCE += '；線上更新失敗，可能沒有網路'; });
+    }
+  }).then(main, main);
+})();
+</script>
+</body>
+</html>
